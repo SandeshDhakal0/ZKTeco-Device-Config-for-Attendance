@@ -13,16 +13,7 @@ namespace AttendancePuller
         {
 
         }
-        //protected override void OnModelCreating(ModelBuilder modelBuilder)
-        //{
-        //    modelBuilder.Entity<Attendance>().ToTable("Attendance");
-        //    modelBuilder.Entity<Attendance>().Property(a => a.Id).HasColumnName("AttendanceId");
-
-        //    // Add any additional configuration for the Attendance entity
-
-        //    base.OnModelCreating(modelBuilder);
-        //}
-
-        public DbSet<Attendance> Attendances { get; set; }
+ 
+        public DbSet<Attendance> Attendance { get; set; }
     }
 }

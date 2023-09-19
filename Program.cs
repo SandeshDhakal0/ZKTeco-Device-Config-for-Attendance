@@ -1,77 +1,71 @@
-﻿using zkemkeeper;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Timers;
+using zkemkeeper;
 
-namespace AttendancePulller
+namespace AttendancePuller
 {
     internal class Program
     {
+        private static DbContextOptions<ApplicationDbContext> dbContextOptions;
+
         public Program()
         {
         }
+
         public enum CONSTANTS
         {
             PORT = 4370,
         }
 
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
+            IConfiguration configuration = new ConfigurationBuilder()
+              .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+              .Build();
             Console.WriteLine("Connecting...");
             CZKEM objCZKEM = new CZKEM();
-            if(objCZKEM.Connect_Net("10.200.1.4", (int)CONSTANTS.PORT))
+            if (objCZKEM.Connect_Net("10.200.1.4", (int)CONSTANTS.PORT))
             {
                 objCZKEM.SetDeviceTime2(objCZKEM.MachineNumber, DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, DateTime.Now.Hour, DateTime.Now.Minute, DateTime.Now.Second);
                 Console.WriteLine("Connection Successful!");
                 Console.WriteLine("Obtaining attendance data...");
+
+                dbContextOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+                       .UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
+                       .Options;
+
+                System.Timers.Timer timer = new System.Timers.Timer
+                {
+                    Interval = 60000, // 1 minute
+                    AutoReset = true,
+                    Enabled = true
+                };
+
+                timer.Elapsed += async (sender, e) =>
+                {
+                    await FetchAndSaveAttendance(objCZKEM);
+                };
+
+                await FetchAndSaveAttendance(objCZKEM);
+
+                Console.WriteLine("Press any key to exit...");
+                Console.ReadKey();
             }
             else
             {
                 Console.WriteLine("Connection Failed!");
             }
-            if (objCZKEM.ReadGeneralLogData(objCZKEM.MachineNumber))
-            {
-                //ArrayList logs = new ArrayList();
-                string log;
-                string dwEnrollNumber;
-                int dwVerifyMode;
-                int dwInOutMode;
-                int dwYear;
-                int dwMonth;
-                int dwDay;
-                int dwHour;
-                int dwMinute;
-                int dwSecond;
-                int dwWorkCode = 1;
-                int AWorkCode;
-                objCZKEM.GetWorkCode(dwWorkCode, out AWorkCode);
-                //objCZKEM.SaveTheDataToFile(objCZKEM.MachineNumber, "attendance.txt", 1);
-                while (true)
-                {
-                    if (!objCZKEM.SSR_GetGeneralLogData(
-                    objCZKEM.MachineNumber,
-                    out dwEnrollNumber,
-                    out dwVerifyMode,
-                    out dwInOutMode,
-                    out dwYear,
-                    out dwMonth,
-                    out dwDay,
-                    out dwHour,
-                    out dwMinute,
-                    out dwSecond,
-                    ref AWorkCode
-                    ))
-                    {
-                        break;
-                    }
-                    log = "User ID:" + dwEnrollNumber + " " + verificationMode(dwVerifyMode) + " " + InorOut(dwInOutMode) + " " + dwDay + "/" + dwMonth + "/" + dwYear + " " + time(dwHour) + ":" + time(dwMinute) + ":" + time(dwSecond);
-                    Console.WriteLine(log);
-                    //logs.Add(log);
-                }
-            }
-            //Console.ReadLine();
         }
 
-        static void getAttendanceLogs(CZKEM objCZKEM)
+        static async Task FetchAndSaveAttendance(CZKEM objCZKEM)
         {
-            string log;
+            List<Attendance> attendanceList = new List<Attendance>();
+
             string dwEnrollNumber;
             int dwVerifyMode;
             int dwInOutMode;
@@ -84,42 +78,51 @@ namespace AttendancePulller
             int dwWorkCode = 1;
             int AWorkCode;
             objCZKEM.GetWorkCode(dwWorkCode, out AWorkCode);
-            //objCZKEM.SaveTheDataToFile(objCZKEM.MachineNumber, "attendance.txt", 1);
+
             while (true)
             {
                 if (!objCZKEM.SSR_GetGeneralLogData(
-                objCZKEM.MachineNumber,
-                out dwEnrollNumber,
-                out dwVerifyMode,
-                out dwInOutMode,
-                out dwYear,
-                out dwMonth,
-                out dwDay,
-                out dwHour,
-                out dwMinute,
-                out dwSecond,
-                ref AWorkCode
+                    objCZKEM.MachineNumber,
+                    out dwEnrollNumber,
+                    out dwVerifyMode,
+                    out dwInOutMode,
+                    out dwYear,
+                    out dwMonth,
+                    out dwDay,
+                    out dwHour,
+                    out dwMinute,
+                    out dwSecond,
+                    ref AWorkCode
                 ))
                 {
                     break;
                 }
-                log = "User ID:" + dwEnrollNumber + " " + verificationMode(dwVerifyMode) + " " + InorOut(dwInOutMode) + " " + dwDay + "/" + dwMonth + "/" + dwYear + " " + time(dwHour) + ":" + time(dwMinute) + ":" + time(dwSecond);
-                Console.WriteLine(log);
-            }
-        }
 
-        static string time(int Time)
-        {
-            string stringTime = "";
-            if (Time < 10)
+                Attendance attendance = new Attendance
+                {
+                    UserId = dwEnrollNumber,
+                    VerifyMode = verificationMode(dwVerifyMode),
+                    InOutMode = InorOut(dwInOutMode),
+                    Date = new DateTime(dwYear, dwMonth, dwDay),
+                    Time = new TimeSpan(dwHour, dwMinute, dwSecond)
+                };
+
+                attendanceList.Add(attendance);
+            }
+
+            if (attendanceList.Any())
             {
-                stringTime = "0" + Time.ToString();
+                using (ApplicationDbContext dbContext = new ApplicationDbContext(dbContextOptions))
+                {
+                    await dbContext.Attendance.AddRangeAsync(attendanceList);
+                    await dbContext.SaveChangesAsync();
+                    Console.WriteLine($"{attendanceList.Count} attendance records saved to the database.");
+                }
             }
             else
             {
-                stringTime = Time.ToString();
+                Console.WriteLine("No attendance records to save.");
             }
-            return stringTime;
         }
 
         static string verificationMode(int verifyMode)
@@ -163,9 +166,18 @@ namespace AttendancePulller
                 case 5:
                     InOrOut = "OVERTIME-OUT";
                     break;
-
             }
             return InOrOut;
         }
+    }
+
+    public class Attendance
+    {
+        public int Id { get; set; }
+        public string UserId { get; set; }
+        public string VerifyMode { get; set; }
+        public string InOutMode { get; set; }
+        public DateTime Date { get; set; }
+        public TimeSpan Time { get; set; }
     }
 }
