@@ -1,0 +1,6 @@
+C:\Users\Dell\Desktop\AttendancePuller\obj\Debug\net4.8\AttendancePuller.csproj.AssemblyReference.cache
+C:\Users\Dell\Desktop\AttendancePuller\obj\Debug\net4.8\AttendancePuller.csproj.SuggestedBindingRedirects.cache
+C:\Users\Dell\Desktop\AttendancePuller\obj\Debug\net4.8\AttendancePuller.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Dell\Desktop\AttendancePuller\obj\Debug\net4.8\AttendancePuller.AssemblyInfoInputs.cache
+C:\Users\Dell\Desktop\AttendancePuller\obj\Debug\net4.8\AttendancePuller.AssemblyInfo.cs
+C:\Users\Dell\Desktop\AttendancePuller\obj\Debug\net4.8\AttendancePuller.csproj.CoreCompileInputs.cache
