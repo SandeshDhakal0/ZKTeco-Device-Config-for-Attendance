@@ -25,44 +25,50 @@ namespace AttendancePuller
         static async Task Main(string[] args)
         {
             IConfiguration configuration = new ConfigurationBuilder()
-              .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-              .Build();
+                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                .Build();
             Console.WriteLine("Connecting...");
-            CZKEM objCZKEM = new CZKEM();
-            if (objCZKEM.Connect_Net("10.200.1.4", (int)CONSTANTS.PORT))
+
+                    List<string> deviceIPs = new List<string>
             {
-                objCZKEM.SetDeviceTime2(objCZKEM.MachineNumber, DateTime.Now.Year, DateTime.Now.Month, DateTime.Now.Day, DateTime.Now.Hour, DateTime.Now.Minute, DateTime.Now.Second);
-                Console.WriteLine("Connection Successful!");
-                Console.WriteLine("Obtaining attendance data...");
+               // "10.200.1.2",
+                "10.200.1.3",
+                "10.200.1.4",
+                "10.200.1.5"
+                //"10.10.20.102",
+                //"10.10.20.104",
+                //"10.10.20.105",
+                //"10.10.20.103",
+                //"10.10.20.115",
+                //"10.10.20.106",
+                //"10.10.20.207",
+                //"10.10.80.2",
+                //"10.10.80.4"
+                // Add more device IP addresses if needed
+            };
 
-                dbContextOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
-                       .UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
-                       .Options;
-
-                System.Timers.Timer timer = new System.Timers.Timer
-                {
-                    Interval = 60000, // 1 minute
-                    AutoReset = true,
-                    Enabled = true
-                };
-
-                timer.Elapsed += async (sender, e) =>
-                {
-                    await FetchAndSaveAttendance(objCZKEM);
-                };
-
-                await FetchAndSaveAttendance(objCZKEM);
-
-                Console.WriteLine("Press any key to exit...");
-                Console.ReadKey();
-            }
-            else
+            List<Task> tasks = new List<Task>();
+            foreach (string deviceIP in deviceIPs)
             {
-                Console.WriteLine("Connection Failed!");
+                CZKEM objCZKEM = new CZKEM();
+                if (objCZKEM.Connect_Net(deviceIP, (int)CONSTANTS.PORT))
+                {
+                    tasks.Add(FetchAndSaveAttendance(objCZKEM, configuration));
+                }
+                else
+                {
+                    Console.WriteLine($"Connection to device {deviceIP} failed!");
+                }
             }
+
+            // Wait for all attendance extraction tasks to complete
+            await Task.WhenAll(tasks);
+
+            Console.WriteLine("Press any key to exit...");
+            Console.ReadKey();
         }
 
-        static async Task FetchAndSaveAttendance(CZKEM objCZKEM)
+        static async Task FetchAndSaveAttendance(CZKEM objCZKEM, IConfiguration configuration)
         {
             List<Attendance> attendanceList = new List<Attendance>();
 
@@ -104,7 +110,8 @@ namespace AttendancePuller
                     VerifyMode = verificationMode(dwVerifyMode),
                     InOutMode = InorOut(dwInOutMode),
                     Date = new DateTime(dwYear, dwMonth, dwDay),
-                    Time = new TimeSpan(dwHour, dwMinute, dwSecond)
+                    Time = new TimeSpan(dwHour, dwMinute, dwSecond),
+                    DeviceNumber = objCZKEM.MachineNumber
                 };
 
                 attendanceList.Add(attendance);
@@ -112,16 +119,20 @@ namespace AttendancePuller
 
             if (attendanceList.Any())
             {
+                DbContextOptions<ApplicationDbContext> dbContextOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+                    .UseSqlServer(configuration.GetConnectionString("DefaultConnection"))
+                    .Options;
+
                 using (ApplicationDbContext dbContext = new ApplicationDbContext(dbContextOptions))
                 {
                     await dbContext.Attendance.AddRangeAsync(attendanceList);
                     await dbContext.SaveChangesAsync();
-                    Console.WriteLine($"{attendanceList.Count} attendance records saved to the database.");
+                    Console.WriteLine($"{attendanceList.Count} attendance records from device {objCZKEM.MachineNumber} saved to the database.");
                 }
             }
             else
             {
-                Console.WriteLine("No attendance records to save.");
+                Console.WriteLine($"No attendance records from device {objCZKEM.MachineNumber} to save.");
             }
         }
 
@@ -179,5 +190,6 @@ namespace AttendancePuller
         public string InOutMode { get; set; }
         public DateTime Date { get; set; }
         public TimeSpan Time { get; set; }
+        public int DeviceNumber { get; set; }
     }
 }
